@@ -51,6 +51,182 @@ Click any example button:
 - **Get Balance** - Configuration check example
 - **Create Client** - Hedera SDK usage example
 
+**FULL WORKING EXAMPLE TO TEST AGENT**
+```javascript
+// Full Hedera Agent with ALL Tools (Browser Version)
+// This mirrors the complete CLI agent script
+
+// Get configuration from localStorage OR Vite env variables
+const config = getConfig();
+const ACCOUNT_ID = config.ACCOUNT_ID || viteEnv.VITE_ACCOUNT_ID;
+const PRIVATE_KEY = config.PRIVATE_KEY || viteEnv.VITE_PRIVATE_KEY;
+const OPENAI_API_KEY = config.OPENAI_API_KEY || viteEnv.VITE_OPENAI_API_KEY;
+
+if (!ACCOUNT_ID || !PRIVATE_KEY || !OPENAI_API_KEY) {
+  console.error('❌ Please configure credentials:');
+  console.error('Option 1: Use the Configuration panel above');
+  console.error('Option 2: Set VITE_* env variables in .env file');
+  console.error('  - VITE_ACCOUNT_ID');
+  console.error('  - VITE_PRIVATE_KEY');
+  console.error('  - VITE_OPENAI_API_KEY');
+} else {
+  try {
+    console.log('🚀 Initializing Full Hedera Agent...');
+    
+    // Hedera client setup
+    const client = Client.forTestnet().setOperator(
+      ACCOUNT_ID,
+      PrivateKey.fromStringECDSA(PRIVATE_KEY),
+    );
+    console.log('✅ Hedera client connected to testnet');
+    
+    // All tool name constants are pre-imported and available
+    // Extract all tool names (same as original script)
+    const {
+      TRANSFER_HBAR_TOOL,
+      CREATE_ACCOUNT_TOOL,
+      DELETE_ACCOUNT_TOOL,
+      UPDATE_ACCOUNT_TOOL,
+      SIGN_SCHEDULE_TRANSACTION_TOOL,
+      SCHEDULE_DELETE_TOOL,
+      APPROVE_HBAR_ALLOWANCE_TOOL,
+      TRANSFER_HBAR_WITH_ALLOWANCE_TOOL,
+    } = toolNames.coreAccountPluginToolNames;
+    
+    const {
+      CREATE_FUNGIBLE_TOKEN_TOOL,
+      CREATE_NON_FUNGIBLE_TOKEN_TOOL,
+      AIRDROP_FUNGIBLE_TOKEN_TOOL,
+      MINT_FUNGIBLE_TOKEN_TOOL,
+      MINT_NON_FUNGIBLE_TOKEN_TOOL,
+      UPDATE_TOKEN_TOOL,
+      DISSOCIATE_TOKEN_TOOL,
+      ASSOCIATE_TOKEN_TOOL,
+    } = toolNames.coreTokenPluginToolNames;
+    
+    const {
+      CREATE_TOPIC_TOOL,
+      SUBMIT_TOPIC_MESSAGE_TOOL,
+      DELETE_TOPIC_TOOL,
+      UPDATE_TOPIC_TOOL,
+    } = toolNames.coreConsensusPluginToolNames;
+    
+    const {
+      GET_ACCOUNT_QUERY_TOOL,
+      GET_ACCOUNT_TOKEN_BALANCES_QUERY_TOOL,
+      GET_HBAR_BALANCE_QUERY_TOOL,
+    } = toolNames.coreAccountQueryPluginToolNames;
+    
+    const {
+      GET_TOPIC_MESSAGES_QUERY_TOOL,
+      GET_TOPIC_INFO_QUERY_TOOL,
+    } = toolNames.coreConsensusQueryPluginToolNames;
+    
+    const {
+      GET_TOKEN_INFO_QUERY_TOOL,
+      GET_PENDING_AIRDROP_TOOL,
+    } = toolNames.coreTokenQueryPluginToolNames;
+    
+    const { GET_CONTRACT_INFO_QUERY_TOOL } = toolNames.coreEVMQueryPluginToolNames;
+    const { GET_TRANSACTION_RECORD_QUERY_TOOL } = toolNames.coreTransactionQueryPluginToolNames;
+    const { GET_EXCHANGE_RATE_TOOL } = toolNames.coreMiscQueriesPluginsToolNames;
+    
+    const {
+      TRANSFER_ERC721_TOOL,
+      MINT_ERC721_TOOL,
+      CREATE_ERC20_TOOL,
+      TRANSFER_ERC20_TOOL,
+      CREATE_ERC721_TOOL,
+    } = toolNames.coreEVMPluginToolNames;
+    
+    console.log('✅ Tool names loaded');
+    
+    // Create toolkit with ALL tools
+    const hederaAgentToolkit = new HederaLangchainToolkit({
+      client,
+      configuration: {
+        tools: [
+          // All core tools from original script
+          TRANSFER_HBAR_TOOL,
+          CREATE_FUNGIBLE_TOKEN_TOOL,
+          CREATE_TOPIC_TOOL,
+          SUBMIT_TOPIC_MESSAGE_TOOL,
+          DELETE_TOPIC_TOOL,
+          GET_HBAR_BALANCE_QUERY_TOOL,
+          CREATE_NON_FUNGIBLE_TOKEN_TOOL,
+          CREATE_ACCOUNT_TOOL,
+          DELETE_ACCOUNT_TOOL,
+          UPDATE_ACCOUNT_TOOL,
+          AIRDROP_FUNGIBLE_TOKEN_TOOL,
+          MINT_FUNGIBLE_TOKEN_TOOL,
+          MINT_NON_FUNGIBLE_TOKEN_TOOL,
+          ASSOCIATE_TOKEN_TOOL,
+          GET_ACCOUNT_QUERY_TOOL,
+          GET_ACCOUNT_TOKEN_BALANCES_QUERY_TOOL,
+          GET_TOPIC_MESSAGES_QUERY_TOOL,
+          GET_TOKEN_INFO_QUERY_TOOL,
+          GET_TRANSACTION_RECORD_QUERY_TOOL,
+          GET_EXCHANGE_RATE_TOOL,
+          SIGN_SCHEDULE_TRANSACTION_TOOL,
+          GET_CONTRACT_INFO_QUERY_TOOL,
+          TRANSFER_ERC721_TOOL,
+          MINT_ERC721_TOOL,
+          CREATE_ERC20_TOOL,
+          TRANSFER_ERC20_TOOL,
+          CREATE_ERC721_TOOL,
+          UPDATE_TOKEN_TOOL,
+          GET_PENDING_AIRDROP_TOOL,
+          DISSOCIATE_TOKEN_TOOL,
+          SCHEDULE_DELETE_TOOL,
+          GET_TOPIC_INFO_QUERY_TOOL,
+          UPDATE_TOPIC_TOOL,
+          APPROVE_HBAR_ALLOWANCE_TOOL,
+          TRANSFER_HBAR_WITH_ALLOWANCE_TOOL,
+        ],
+        plugins: [], // Add plugins here if needed
+        context: {
+          mode: AgentMode.AUTONOMOUS,
+        },
+      },
+    });
+    
+    const tools = hederaAgentToolkit.getTools();
+    console.log(`✅ Loaded ${tools.length} tools`);
+    
+    // Create LLM
+    const llm = new ChatOpenAI({
+      model: 'gpt-4o-mini',
+      apiKey: OPENAI_API_KEY,
+    });
+    console.log('✅ LLM initialized');
+    
+    // Create agent
+    const agent = createAgent({
+      model: llm,
+      tools: tools,
+      systemPrompt: 'You are a helpful assistant with access to Hedera blockchain tools',
+      checkpointer: new MemorySaver(),
+    });
+    console.log('✅ Agent created');
+    
+    // Create response parser
+    const responseParsingService = new ResponseParserService(tools);
+    console.log('✅ Response parser ready');
+    
+     const response = await agent.invoke(
+        { messages: [{ role: 'user', content: 'create a topic with memo "ADSFGHKJ"' }] },
+        { configurable: { thread_id: '1' } },
+      );
+    const parsed = responseParsingService.parseNewToolMessages(response);
+    console.log(response.messages[response.messages.length - 1].content)
+    
+  } catch (error) {
+    console.error('❌ Error initializing agent:', error.message);
+    console.error(error.stack);
+  }
+}
+```
+
 ### 3. Execute Code
 
 Click **▶️ Execute Code** to run the code in the editor.
