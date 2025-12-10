@@ -237,6 +237,135 @@ class ChatManager {
   }
 }
 
+// BrowserChat - Promise-based I/O for CLI-like code patterns
+class BrowserChat {
+  private chatMessages: HTMLElement;
+  private chatInput: HTMLInputElement;
+  private sendBtn: HTMLButtonElement;
+  private agentStatus: HTMLElement;
+  private pendingResolve: ((value: string) => void) | null = null;
+  private isRunning: boolean = false;
+  private stopRequested: boolean = false;
+
+  constructor() {
+    this.chatMessages = document.getElementById('chatMessages') as HTMLElement;
+    this.chatInput = document.getElementById('chatInput') as HTMLInputElement;
+    this.sendBtn = document.getElementById('sendBtn') as HTMLButtonElement;
+    this.agentStatus = document.getElementById('agentStatus') as HTMLElement;
+  }
+
+  // Start the chat session - enables input and sets up handlers
+  start(): void {
+    this.isRunning = true;
+    this.stopRequested = false;
+    this.enableInput(true);
+    this.setStatus('ready', 'Agent running');
+    this.clearWelcome();
+  }
+
+  // Stop the chat session
+  stop(): void {
+    this.stopRequested = true;
+    this.isRunning = false;
+    this.enableInput(false);
+    this.setStatus('inactive', 'Agent stopped');
+    // Resolve any pending input with empty string to break the loop
+    if (this.pendingResolve) {
+      this.pendingResolve('');
+      this.pendingResolve = null;
+    }
+  }
+
+  // Promise-based input - waits for user to submit a message
+  async input(prompt?: string): Promise<string> {
+    if (this.stopRequested) {
+      return '';
+    }
+
+    if (prompt) {
+      this.log(prompt);
+    }
+
+    this.setStatus('ready', 'Waiting for input...');
+
+    return new Promise((resolve) => {
+      this.pendingResolve = resolve;
+    });
+  }
+
+  // Called by Send button handler - resolves the pending input promise
+  submitInput(text: string): void {
+    if (this.pendingResolve) {
+      // Add user message to chat
+      this.addMessage('user', text);
+      this.setStatus('thinking', 'Thinking...');
+
+      const resolve = this.pendingResolve;
+      this.pendingResolve = null;
+      resolve(text);
+    }
+  }
+
+  // Check if there's a pending input request
+  hasPendingInput(): boolean {
+    return this.pendingResolve !== null;
+  }
+
+  // Log output to chat (agent message)
+  log(...args: any[]): void {
+    const content = args.map(arg =>
+      typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
+    ).join(' ');
+    this.addMessage('agent', content);
+  }
+
+  // Log error to chat
+  error(...args: any[]): void {
+    const content = args.map(arg =>
+      typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
+    ).join(' ');
+    this.addMessage('error', `❌ ${content}`);
+  }
+
+  private addMessage(type: 'user' | 'agent' | 'error', content: string): void {
+    const msg = document.createElement('div');
+    msg.className = `chat-message ${type === 'error' ? 'agent' : type}`;
+
+    if (type === 'error') {
+      msg.innerHTML = `<span style="color: var(--error);">${content}</span>`;
+    } else {
+      msg.textContent = content;
+    }
+
+    this.chatMessages.appendChild(msg);
+    this.scrollToBottom();
+  }
+
+  private clearWelcome(): void {
+    const welcome = this.chatMessages.querySelector('.chat-welcome');
+    if (welcome) {
+      welcome.remove();
+    }
+  }
+
+  private enableInput(enabled: boolean): void {
+    this.chatInput.disabled = !enabled;
+    this.sendBtn.disabled = !enabled;
+  }
+
+  private setStatus(status: 'inactive' | 'ready' | 'thinking' | 'error', text: string): void {
+    this.agentStatus.className = `agent-status status-${status}`;
+    const statusText = this.agentStatus.querySelector('.status-text') as HTMLElement;
+    if (statusText) {
+      statusText.textContent = text;
+    }
+  }
+
+  private scrollToBottom(): void {
+    this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
+  }
+}
+
 // Code examples
 const examples = {
   hello: `console.log('Hello from Hedera Agent Kit!');
@@ -265,8 +394,8 @@ if (!config.ACCOUNT_ID || !config.PRIVATE_KEY) {
   }
 }`,
 
-  fullAgent: `// 🤖 Full Hedera Agent - Editable Configuration
-// Execute this code to initialize the agent, then use Agent Chat to interact!
+  fullAgent: `// 🤖 Full Hedera Agent - CLI-like Pattern
+// This code runs a chat loop - just like the CLI version!
 
 const config = getConfig();
 const ACCOUNT_ID = config.ACCOUNT_ID || viteEnv.VITE_ACCOUNT_ID;
@@ -274,18 +403,18 @@ const PRIVATE_KEY = config.PRIVATE_KEY || viteEnv.VITE_PRIVATE_KEY;
 const OPENAI_API_KEY = config.OPENAI_API_KEY || viteEnv.VITE_OPENAI_API_KEY;
 
 if (!ACCOUNT_ID || !PRIVATE_KEY || !OPENAI_API_KEY) {
-  console.error('❌ Please configure credentials first!');
+  chat.error('Please configure credentials first!');
 } else {
-  console.log('🚀 Initializing Hedera Agent...');
+  chat.log('🚀 Initializing Hedera Agent...');
   
   // Create Hedera client
   const client = Client.forTestnet().setOperator(
     ACCOUNT_ID,
     PrivateKey.fromStringECDSA(PRIVATE_KEY),
   );
-  console.log('✅ Hedera client connected');
+  chat.log('✅ Hedera client connected');
   
-  // Get tool names - you can customize which tools to include!
+  // Get tool names - customize which tools to include!
   const { GET_HBAR_BALANCE_QUERY_TOOL } = toolNames.coreAccountQueryPluginToolNames;
   const { TRANSFER_HBAR_TOOL, CREATE_ACCOUNT_TOOL } = toolNames.coreAccountPluginToolNames;
   const { CREATE_TOPIC_TOOL, SUBMIT_TOPIC_MESSAGE_TOOL } = toolNames.coreConsensusPluginToolNames;
@@ -312,31 +441,59 @@ if (!ACCOUNT_ID || !PRIVATE_KEY || !OPENAI_API_KEY) {
   });
   
   const tools = toolkit.getTools();
-  console.log(\`✅ Loaded \${tools.length} tools\`);
+  chat.log(\`✅ Loaded \${tools.length} tools\`);
   
-  // Create LLM - you can change the model here!
+  // Create LLM - change the model here if needed!
   const llm = new ChatOpenAI({
-    model: 'gpt-4o-mini',  // Try 'gpt-4o' for better reasoning
+    model: 'gpt-4o-mini',
     apiKey: OPENAI_API_KEY,
   });
-  console.log('✅ LLM initialized');
+  chat.log('✅ LLM initialized');
   
-  // Create agent with custom system prompt - modify as needed!
+  // Create agent
   const agent = createAgent({
     model: llm,
     tools: tools,
-    systemPrompt: 'You are a helpful Hedera blockchain assistant. Help users check balances, transfer HBAR, create tokens, and manage topics.',
+    systemPrompt: 'You are a helpful Hedera blockchain assistant.',
     checkpointer: new MemorySaver(),
   });
-  console.log('✅ Agent created');
   
-  // Register agent with the Chat UI
-  registerAgent(agent, tools);
+  // Response parser for tool data
+  const parser = new ResponseParserService(tools);
   
-  console.log('');
-  console.log('🎉 Agent ready! Switch to the Agent Chat tab to start chatting.');
-  console.log('');
-  console.log('💡 Try asking: "What is my HBAR balance?"');
+  chat.log('✅ Agent ready!');
+  chat.log('');
+  chat.log('💬 Type your message below. Type "exit" to stop.');
+  
+  // Main chat loop - just like CLI!
+  while (true) {
+    const userInput = await chat.input();
+    
+    // Handle exit
+    if (!userInput || userInput.toLowerCase() === 'exit') {
+      chat.log('👋 Goodbye!');
+      break;
+    }
+    
+    try {
+      const response = await agent.invoke(
+        { messages: [{ role: 'user', content: userInput }] },
+        { configurable: { thread_id: '1' } },
+      );
+      
+      const parsedData = parser.parseNewToolMessages(response);
+      const toolCall = parsedData[0];
+      const aiContent = response.messages[response.messages.length - 1].content;
+      
+      chat.log(aiContent);
+      
+      if (toolCall?.parsedData?.humanMessage) {
+        chat.log('🔧 Tool: ' + toolCall.parsedData.humanMessage);
+      }
+    } catch (err) {
+      chat.error('Error: ' + err.message);
+    }
+  }
 }`,
 };
 
@@ -349,6 +506,7 @@ function init(): void {
   // Initialize managers
   const agentManager = new AgentManager();
   const chatManager = new ChatManager();
+  const browserChat = new BrowserChat();
 
   // Populate config fields
   (document.getElementById('accountId') as HTMLInputElement).value = config.ACCOUNT_ID;
@@ -382,7 +540,13 @@ function init(): void {
     }
 
     output.info('🚀 Executing code...');
-    await executeCode(code, output, agentManager, chatManager);
+    browserChat.start();
+    try {
+      await executeCode(code, output, browserChat);
+    } catch (error: any) {
+      // Error already logged in executeCode
+    }
+    browserChat.stop();
   });
 
   // Example buttons
@@ -416,6 +580,7 @@ function init(): void {
   // Start Agent button - executes code from the editor
   document.getElementById('startAgentBtn')?.addEventListener('click', async () => {
     const startBtn = document.getElementById('startAgentBtn') as HTMLButtonElement;
+    const stopBtn = document.getElementById('stopAgentBtn') as HTMLButtonElement;
     const codeInput = document.getElementById('codeInput') as HTMLTextAreaElement;
     const code = codeInput.value;
 
@@ -425,82 +590,55 @@ function init(): void {
     }
 
     startBtn.disabled = true;
-    startBtn.textContent = '⏳ Starting...';
-    chatManager.setStatus('thinking', 'Executing code...');
+    startBtn.textContent = '✅ Agent Running';
+    if (stopBtn) stopBtn.disabled = false;
+
+    // Start the browser chat (enables input, clears welcome)
+    browserChat.start();
 
     try {
-      // Execute the code from the editor - it should call registerAgent() to connect to the chat
-      await executeCode(code, output, agentManager, chatManager);
-
-      // If the code didn't register an agent, inform the user
-      if (!agentManager.isReady()) {
-        chatManager.setStatus('inactive', 'Agent not started');
-        chatManager.addAgentMessage('⚠️ Code executed, but no agent was registered. Make sure your code calls `registerAgent(agent, tools)` to connect to the chat.');
-        startBtn.disabled = false;
-        startBtn.textContent = '🚀 Start Agent';
-      }
+      // Execute the code from the editor - it uses the injected `chat` object
+      await executeCode(code, output, browserChat);
     } catch (error: any) {
-      chatManager.setStatus('error', 'Failed to start');
-      chatManager.addErrorMessage(error.message);
-      startBtn.disabled = false;
-      startBtn.textContent = '🚀 Start Agent';
+      chatManager.setStatus('error', 'Error occurred');
+      browserChat.error(error.message);
     }
+
+    // Code finished (loop exited or error)
+    browserChat.stop();
+    startBtn.disabled = false;
+    startBtn.textContent = '🚀 Start Agent';
+    if (stopBtn) stopBtn.disabled = true;
   });
 
   // Stop Agent button
   document.getElementById('stopAgentBtn')?.addEventListener('click', () => {
-    agentManager.stop();
-    chatManager.setStatus('inactive', 'Agent not started');
-    chatManager.enableInput(false);
-
+    browserChat.stop();
     const startBtn = document.getElementById('startAgentBtn') as HTMLButtonElement;
     startBtn.disabled = false;
     startBtn.textContent = '🚀 Start Agent';
   });
 
-  // Send message function
-  async function sendMessage() {
-    const message = chatManager.getInputValue();
-    if (!message) return;
-
-    if (!agentManager.isReady()) {
-      chatManager.addErrorMessage('Please start the agent first.');
-      return;
+  // Send button - submits input to the running code
+  document.getElementById('sendBtn')?.addEventListener('click', () => {
+    const chatInput = document.getElementById('chatInput') as HTMLInputElement;
+    const text = chatInput.value.trim();
+    if (text && browserChat.hasPendingInput()) {
+      chatInput.value = '';
+      browserChat.submitInput(text);
     }
-
-    chatManager.addUserMessage(message);
-    chatManager.clearInput();
-    chatManager.setStatus('thinking', 'Thinking...');
-
-    const thinkingMsg = chatManager.addThinkingMessage();
-
-    try {
-      const response = await agentManager.sendMessage(message);
-      chatManager.removeThinkingMessage(thinkingMsg);
-      chatManager.addAgentMessage(response.content, response.toolData);
-      chatManager.setStatus('ready', 'Agent ready');
-    } catch (error: any) {
-      chatManager.removeThinkingMessage(thinkingMsg);
-      chatManager.addErrorMessage(error.message);
-      chatManager.setStatus('error', 'Error occurred');
-
-      // Reset to ready after a delay
-      setTimeout(() => {
-        if (agentManager.isReady()) {
-          chatManager.setStatus('ready', 'Agent ready');
-        }
-      }, 3000);
-    }
-  }
-
-  // Send button click
-  document.getElementById('sendBtn')?.addEventListener('click', sendMessage);
+  });
 
   // Enter key to send message
   document.getElementById('chatInput')?.addEventListener('keypress', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      sendMessage();
+      const chatInput = document.getElementById('chatInput') as HTMLInputElement;
+      const text = chatInput.value.trim();
+      if (text && browserChat.hasPendingInput()) {
+        chatInput.value = '';
+        browserChat.submitInput(text);
+      }
     }
   });
 
@@ -508,17 +646,9 @@ function init(): void {
   output.log('💡 Try the example buttons or switch to Agent Chat mode.');
 }
 
-// Execute user code
-async function executeCode(code: string, output: OutputManager, agentManager: AgentManager, chatManager: ChatManager): Promise<void> {
+// Execute user code with BrowserChat for I/O
+async function executeCode(code: string, output: OutputManager, chat: BrowserChat): Promise<void> {
   try {
-    // Create a custom console that redirects to our output
-    const customConsole = {
-      log: (...args: any[]) => output.log(...args),
-      error: (...args: any[]) => output.error(...args),
-      info: (...args: any[]) => output.info(...args),
-      warn: (...args: any[]) => output.log(...args),
-    };
-
     // Get Vite environment variables
     const viteEnv = {
       VITE_ACCOUNT_ID: import.meta.env.VITE_ACCOUNT_ID,
@@ -540,28 +670,11 @@ async function executeCode(code: string, output: OutputManager, agentManager: Ag
       coreEVMPluginToolNames,
     };
 
-    // Function to register agent with the chat UI
-    const registerAgent = (agent: any, tools: any[]) => {
-      agentManager.setAgent(agent, tools);
-      chatManager.setStatus('ready', 'Agent ready');
-      chatManager.enableInput(true);
-      chatManager.clearWelcome();
-      chatManager.addAgentMessage('🤖 Agent initialized from code editor! You can now chat with me.');
-
-      // Update sidebar button states
-      const startBtn = document.getElementById('startAgentBtn') as HTMLButtonElement;
-      const stopBtn = document.getElementById('stopAgentBtn') as HTMLButtonElement;
-      if (startBtn) {
-        startBtn.disabled = true;
-        startBtn.textContent = '✅ Agent Running';
-      }
-      if (stopBtn) stopBtn.disabled = false;
-    };
-
     // Create an async function with access to our modules and config
     const AsyncFunction = Object.getPrototypeOf(async function () { }).constructor;
     const fn = new AsyncFunction(
-      'console',
+      'chat',           // BrowserChat for I/O
+      'console',        // Fallback console (outputs to code panel)
       'Client',
       'PrivateKey',
       'HederaLangchainToolkit',
@@ -573,12 +686,20 @@ async function executeCode(code: string, output: OutputManager, agentManager: Ag
       'viteEnv',
       'toolNames',
       'ResponseParserService',
-      'registerAgent',
       code
     );
 
+    // Create console that outputs to the code panel
+    const customConsole = {
+      log: (...args: any[]) => output.log(...args),
+      error: (...args: any[]) => output.error(...args),
+      info: (...args: any[]) => output.info(...args),
+      warn: (...args: any[]) => output.log(...args),
+    };
+
     // Execute the code
     await fn(
+      chat,             // BrowserChat instance
       customConsole,
       Client,
       PrivateKey,
@@ -590,18 +711,14 @@ async function executeCode(code: string, output: OutputManager, agentManager: Ag
       loadConfig,
       viteEnv,
       toolNames,
-      ResponseParserService,
-      registerAgent
+      ResponseParserService
     );
 
-    output.success('✅ Code executed successfully!');
+    output.success('✅ Code execution completed.');
   } catch (error: any) {
     output.error('❌ Error executing code:');
     output.error(error.message || String(error));
-    if (error.stack) {
-      output.error('Stack trace:');
-      output.error(error.stack);
-    }
+    throw error; // Re-throw so the caller can handle it
   }
 }
 
