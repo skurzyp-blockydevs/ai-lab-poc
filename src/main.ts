@@ -90,6 +90,153 @@ class OutputManager {
   }
 }
 
+// Agent Manager - handles agent lifecycle
+class AgentManager {
+  private agent: any = null;
+  private responseParser: ResponseParserService | null = null;
+  private threadId: string = '1';
+
+  // Allow external code to set the agent (from code editor)
+  setAgent(agent: any, tools: any[]): void {
+    this.agent = agent;
+    this.responseParser = new ResponseParserService(tools);
+  }
+
+
+  async sendMessage(message: string): Promise<{ content: string; toolData?: any }> {
+    if (!this.agent || !this.responseParser) {
+      throw new Error('Agent not initialized. Please start the agent first.');
+    }
+
+    const response = await this.agent.invoke(
+      { messages: [{ role: 'user', content: message }] },
+      { configurable: { thread_id: this.threadId } },
+    );
+
+    const parsedToolData = this.responseParser.parseNewToolMessages(response);
+    const toolCall = parsedToolData[0];
+    const aiContent = response.messages[response.messages.length - 1].content || '';
+
+    return {
+      content: aiContent,
+      toolData: toolCall?.parsedData || null,
+    };
+  }
+
+  isReady(): boolean {
+    return this.agent !== null;
+  }
+
+  stop(): void {
+    this.agent = null;
+    this.responseParser = null;
+  }
+}
+
+// Chat Manager - handles chat UI
+class ChatManager {
+  private chatMessages: HTMLElement;
+  private agentStatus: HTMLElement;
+  private chatInput: HTMLInputElement;
+  private sendBtn: HTMLButtonElement;
+  private startBtn: HTMLButtonElement;
+  private stopBtn: HTMLButtonElement;
+
+  constructor() {
+    this.chatMessages = document.getElementById('chatMessages') as HTMLElement;
+    this.agentStatus = document.getElementById('agentStatus') as HTMLElement;
+    this.chatInput = document.getElementById('chatInput') as HTMLInputElement;
+    this.sendBtn = document.getElementById('sendBtn') as HTMLButtonElement;
+    this.startBtn = document.getElementById('startAgentBtn') as HTMLButtonElement;
+    this.stopBtn = document.getElementById('stopAgentBtn') as HTMLButtonElement;
+  }
+
+  setStatus(status: 'inactive' | 'ready' | 'thinking' | 'error', text: string): void {
+    this.agentStatus.className = `agent-status status-${status}`;
+    const statusText = this.agentStatus.querySelector('.status-text') as HTMLElement;
+    if (statusText) {
+      statusText.textContent = text;
+    }
+  }
+
+  enableInput(enabled: boolean): void {
+    this.chatInput.disabled = !enabled;
+    this.sendBtn.disabled = !enabled;
+    this.startBtn.disabled = enabled;
+    this.stopBtn.disabled = !enabled;
+  }
+
+  clearWelcome(): void {
+    const welcome = this.chatMessages.querySelector('.chat-welcome');
+    if (welcome) {
+      welcome.remove();
+    }
+  }
+
+  addUserMessage(content: string): void {
+    this.clearWelcome();
+    const msg = document.createElement('div');
+    msg.className = 'chat-message user';
+    msg.textContent = content;
+    this.chatMessages.appendChild(msg);
+    this.scrollToBottom();
+  }
+
+  addAgentMessage(content: string, toolData?: any): void {
+    const msg = document.createElement('div');
+    msg.className = 'chat-message agent';
+    msg.textContent = content;
+
+    if (toolData) {
+      const toolDiv = document.createElement('div');
+      toolDiv.className = 'tool-response';
+      toolDiv.innerHTML = `
+        <div class="tool-response-header">🔧 Tool Response</div>
+        <div class="tool-response-content">${toolData.humanMessage || JSON.stringify(toolData, null, 2)}</div>
+      `;
+      msg.appendChild(toolDiv);
+    }
+
+    this.chatMessages.appendChild(msg);
+    this.scrollToBottom();
+  }
+
+  addThinkingMessage(): HTMLElement {
+    const msg = document.createElement('div');
+    msg.className = 'chat-message thinking';
+    msg.textContent = 'Thinking';
+    this.chatMessages.appendChild(msg);
+    this.scrollToBottom();
+    return msg;
+  }
+
+  removeThinkingMessage(msg: HTMLElement): void {
+    if (msg && msg.parentNode) {
+      msg.remove();
+    }
+  }
+
+  addErrorMessage(error: string): void {
+    const msg = document.createElement('div');
+    msg.className = 'chat-message agent';
+    msg.innerHTML = `<span style="color: var(--error);">❌ Error: ${error}</span>`;
+    this.chatMessages.appendChild(msg);
+    this.scrollToBottom();
+  }
+
+  getInputValue(): string {
+    return this.chatInput.value.trim();
+  }
+
+  clearInput(): void {
+    this.chatInput.value = '';
+  }
+
+  private scrollToBottom(): void {
+    this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
+  }
+}
+
 // Code examples
 const examples = {
   hello: `console.log('Hello from Hedera Agent Kit!');
@@ -118,183 +265,78 @@ if (!config.ACCOUNT_ID || !config.PRIVATE_KEY) {
   }
 }`,
 
-  fullAgent: `// Full Hedera Agent with ALL Tools (Browser Version)
-// This mirrors the complete CLI agent script
+  fullAgent: `// 🤖 Full Hedera Agent - Editable Configuration
+// Execute this code to initialize the agent, then use Agent Chat to interact!
 
-// Get configuration from localStorage OR Vite env variables
 const config = getConfig();
 const ACCOUNT_ID = config.ACCOUNT_ID || viteEnv.VITE_ACCOUNT_ID;
 const PRIVATE_KEY = config.PRIVATE_KEY || viteEnv.VITE_PRIVATE_KEY;
 const OPENAI_API_KEY = config.OPENAI_API_KEY || viteEnv.VITE_OPENAI_API_KEY;
 
 if (!ACCOUNT_ID || !PRIVATE_KEY || !OPENAI_API_KEY) {
-  console.error('❌ Please configure credentials:');
-  console.error('Option 1: Use the Configuration panel above');
-  console.error('Option 2: Set VITE_* env variables in .env file');
-  console.error('  - VITE_ACCOUNT_ID');
-  console.error('  - VITE_PRIVATE_KEY');
-  console.error('  - VITE_OPENAI_API_KEY');
+  console.error('❌ Please configure credentials first!');
 } else {
-  try {
-    console.log('🚀 Initializing Full Hedera Agent...');
-    
-    // Hedera client setup
-    const client = Client.forTestnet().setOperator(
-      ACCOUNT_ID,
-      PrivateKey.fromStringECDSA(PRIVATE_KEY),
-    );
-    console.log('✅ Hedera client connected to testnet');
-    
-    // All tool name constants are pre-imported and available
-    // Extract all tool names (same as original script)
-    const {
-      TRANSFER_HBAR_TOOL,
-      CREATE_ACCOUNT_TOOL,
-      DELETE_ACCOUNT_TOOL,
-      UPDATE_ACCOUNT_TOOL,
-      SIGN_SCHEDULE_TRANSACTION_TOOL,
-      SCHEDULE_DELETE_TOOL,
-      APPROVE_HBAR_ALLOWANCE_TOOL,
-      TRANSFER_HBAR_WITH_ALLOWANCE_TOOL,
-    } = toolNames.coreAccountPluginToolNames;
-    
-    const {
-      CREATE_FUNGIBLE_TOKEN_TOOL,
-      CREATE_NON_FUNGIBLE_TOKEN_TOOL,
-      AIRDROP_FUNGIBLE_TOKEN_TOOL,
-      MINT_FUNGIBLE_TOKEN_TOOL,
-      MINT_NON_FUNGIBLE_TOKEN_TOOL,
-      UPDATE_TOKEN_TOOL,
-      DISSOCIATE_TOKEN_TOOL,
-      ASSOCIATE_TOKEN_TOOL,
-    } = toolNames.coreTokenPluginToolNames;
-    
-    const {
-      CREATE_TOPIC_TOOL,
-      SUBMIT_TOPIC_MESSAGE_TOOL,
-      DELETE_TOPIC_TOOL,
-      UPDATE_TOPIC_TOOL,
-    } = toolNames.coreConsensusPluginToolNames;
-    
-    const {
-      GET_ACCOUNT_QUERY_TOOL,
-      GET_ACCOUNT_TOKEN_BALANCES_QUERY_TOOL,
-      GET_HBAR_BALANCE_QUERY_TOOL,
-    } = toolNames.coreAccountQueryPluginToolNames;
-    
-    const {
-      GET_TOPIC_MESSAGES_QUERY_TOOL,
-      GET_TOPIC_INFO_QUERY_TOOL,
-    } = toolNames.coreConsensusQueryPluginToolNames;
-    
-    const {
-      GET_TOKEN_INFO_QUERY_TOOL,
-      GET_PENDING_AIRDROP_TOOL,
-    } = toolNames.coreTokenQueryPluginToolNames;
-    
-    const { GET_CONTRACT_INFO_QUERY_TOOL } = toolNames.coreEVMQueryPluginToolNames;
-    const { GET_TRANSACTION_RECORD_QUERY_TOOL } = toolNames.coreTransactionQueryPluginToolNames;
-    const { GET_EXCHANGE_RATE_TOOL } = toolNames.coreMiscQueriesPluginsToolNames;
-    
-    const {
-      TRANSFER_ERC721_TOOL,
-      MINT_ERC721_TOOL,
-      CREATE_ERC20_TOOL,
-      TRANSFER_ERC20_TOOL,
-      CREATE_ERC721_TOOL,
-    } = toolNames.coreEVMPluginToolNames;
-    
-    console.log('✅ Tool names loaded');
-    
-    // Create toolkit with ALL tools
-    const hederaAgentToolkit = new HederaLangchainToolkit({
-      client,
-      configuration: {
-        tools: [
-          // All core tools from original script
-          TRANSFER_HBAR_TOOL,
-          CREATE_FUNGIBLE_TOKEN_TOOL,
-          CREATE_TOPIC_TOOL,
-          SUBMIT_TOPIC_MESSAGE_TOOL,
-          DELETE_TOPIC_TOOL,
-          GET_HBAR_BALANCE_QUERY_TOOL,
-          CREATE_NON_FUNGIBLE_TOKEN_TOOL,
-          CREATE_ACCOUNT_TOOL,
-          DELETE_ACCOUNT_TOOL,
-          UPDATE_ACCOUNT_TOOL,
-          AIRDROP_FUNGIBLE_TOKEN_TOOL,
-          MINT_FUNGIBLE_TOKEN_TOOL,
-          MINT_NON_FUNGIBLE_TOKEN_TOOL,
-          ASSOCIATE_TOKEN_TOOL,
-          GET_ACCOUNT_QUERY_TOOL,
-          GET_ACCOUNT_TOKEN_BALANCES_QUERY_TOOL,
-          GET_TOPIC_MESSAGES_QUERY_TOOL,
-          GET_TOKEN_INFO_QUERY_TOOL,
-          GET_TRANSACTION_RECORD_QUERY_TOOL,
-          GET_EXCHANGE_RATE_TOOL,
-          SIGN_SCHEDULE_TRANSACTION_TOOL,
-          GET_CONTRACT_INFO_QUERY_TOOL,
-          TRANSFER_ERC721_TOOL,
-          MINT_ERC721_TOOL,
-          CREATE_ERC20_TOOL,
-          TRANSFER_ERC20_TOOL,
-          CREATE_ERC721_TOOL,
-          UPDATE_TOKEN_TOOL,
-          GET_PENDING_AIRDROP_TOOL,
-          DISSOCIATE_TOKEN_TOOL,
-          SCHEDULE_DELETE_TOOL,
-          GET_TOPIC_INFO_QUERY_TOOL,
-          UPDATE_TOPIC_TOOL,
-          APPROVE_HBAR_ALLOWANCE_TOOL,
-          TRANSFER_HBAR_WITH_ALLOWANCE_TOOL,
-        ],
-        plugins: [], // Add plugins here if needed
-        context: {
-          mode: AgentMode.AUTONOMOUS,
-        },
-      },
-    });
-    
-    const tools = hederaAgentToolkit.getTools();
-    console.log(\`✅ Loaded \${tools.length} tools\`);
-    
-    // Create LLM
-    const llm = new ChatOpenAI({
-      model: 'gpt-4o-mini',
-      apiKey: OPENAI_API_KEY,
-    });
-    console.log('✅ LLM initialized');
-    
-    // Create agent
-    const agent = createAgent({
-      model: llm,
-      tools: tools,
-      systemPrompt: 'You are a helpful assistant with access to Hedera blockchain tools',
-      checkpointer: new MemorySaver(),
-    });
-    console.log('✅ Agent created');
-    
-    // Create response parser
-    const responseParsingService = new ResponseParserService(tools);
-    console.log('✅ Response parser ready');
-    
-    console.log('');
-    console.log('🎉 Full Hedera Agent initialized successfully!');
-    console.log('');
-    console.log('Test the agent with:');
-    console.log('');
-    console.log('const response = await agent.invoke(');
-    console.log('  { messages: [{ role: "user", content: "what is my balance?" }] },');
-    console.log('  { configurable: { thread_id: "1" } }');
-    console.log(');');
-    console.log('');
-    console.log('const parsed = responseParsingService.parseNewToolMessages(response);');
-    console.log('console.log(response.messages[response.messages.length - 1].content);');
-    
-  } catch (error) {
-    console.error('❌ Error initializing agent:', error.message);
-    console.error(error.stack);
-  }
+  console.log('🚀 Initializing Hedera Agent...');
+  
+  // Create Hedera client
+  const client = Client.forTestnet().setOperator(
+    ACCOUNT_ID,
+    PrivateKey.fromStringECDSA(PRIVATE_KEY),
+  );
+  console.log('✅ Hedera client connected');
+  
+  // Get tool names - you can customize which tools to include!
+  const { GET_HBAR_BALANCE_QUERY_TOOL } = toolNames.coreAccountQueryPluginToolNames;
+  const { TRANSFER_HBAR_TOOL, CREATE_ACCOUNT_TOOL } = toolNames.coreAccountPluginToolNames;
+  const { CREATE_TOPIC_TOOL, SUBMIT_TOPIC_MESSAGE_TOOL } = toolNames.coreConsensusPluginToolNames;
+  const { CREATE_FUNGIBLE_TOKEN_TOOL, ASSOCIATE_TOKEN_TOOL } = toolNames.coreTokenPluginToolNames;
+  const { GET_EXCHANGE_RATE_TOOL } = toolNames.coreMiscQueriesPluginsToolNames;
+  
+  // Create toolkit - modify this array to add/remove tools!
+  const toolkit = new HederaLangchainToolkit({
+    client,
+    configuration: {
+      tools: [
+        GET_HBAR_BALANCE_QUERY_TOOL,
+        TRANSFER_HBAR_TOOL,
+        CREATE_ACCOUNT_TOOL,
+        CREATE_TOPIC_TOOL,
+        SUBMIT_TOPIC_MESSAGE_TOOL,
+        CREATE_FUNGIBLE_TOKEN_TOOL,
+        ASSOCIATE_TOKEN_TOOL,
+        GET_EXCHANGE_RATE_TOOL,
+      ],
+      plugins: [],
+      context: { mode: AgentMode.AUTONOMOUS },
+    },
+  });
+  
+  const tools = toolkit.getTools();
+  console.log(\`✅ Loaded \${tools.length} tools\`);
+  
+  // Create LLM - you can change the model here!
+  const llm = new ChatOpenAI({
+    model: 'gpt-4o-mini',  // Try 'gpt-4o' for better reasoning
+    apiKey: OPENAI_API_KEY,
+  });
+  console.log('✅ LLM initialized');
+  
+  // Create agent with custom system prompt - modify as needed!
+  const agent = createAgent({
+    model: llm,
+    tools: tools,
+    systemPrompt: 'You are a helpful Hedera blockchain assistant. Help users check balances, transfer HBAR, create tokens, and manage topics.',
+    checkpointer: new MemorySaver(),
+  });
+  console.log('✅ Agent created');
+  
+  // Register agent with the Chat UI
+  registerAgent(agent, tools);
+  
+  console.log('');
+  console.log('🎉 Agent ready! Switch to the Agent Chat tab to start chatting.');
+  console.log('');
+  console.log('💡 Try asking: "What is my HBAR balance?"');
 }`,
 };
 
@@ -303,6 +345,10 @@ function init(): void {
   const config = loadConfig();
   const outputDiv = document.getElementById('output') as HTMLElement;
   const output = new OutputManager(outputDiv);
+
+  // Initialize managers
+  const agentManager = new AgentManager();
+  const chatManager = new ChatManager();
 
   // Populate config fields
   (document.getElementById('accountId') as HTMLInputElement).value = config.ACCOUNT_ID;
@@ -336,7 +382,7 @@ function init(): void {
     }
 
     output.info('🚀 Executing code...');
-    await executeCode(code, output);
+    await executeCode(code, output, agentManager, chatManager);
   });
 
   // Example buttons
@@ -348,12 +394,122 @@ function init(): void {
     });
   });
 
+  // Mode tab switching
+  document.querySelectorAll('.mode-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      const mode = tab.getAttribute('data-mode');
+
+      // Update active tab
+      document.querySelectorAll('.mode-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+
+      // Update active content
+      document.querySelectorAll('.mode-content').forEach(content => {
+        content.classList.remove('active');
+        if (content.classList.contains(`${mode}-mode`)) {
+          content.classList.add('active');
+        }
+      });
+    });
+  });
+
+  // Start Agent button - executes code from the editor
+  document.getElementById('startAgentBtn')?.addEventListener('click', async () => {
+    const startBtn = document.getElementById('startAgentBtn') as HTMLButtonElement;
+    const codeInput = document.getElementById('codeInput') as HTMLTextAreaElement;
+    const code = codeInput.value;
+
+    if (!code.trim()) {
+      chatManager.addErrorMessage('No code in the editor. Please add agent initialization code first (try the 🤖 Full Agent example).');
+      return;
+    }
+
+    startBtn.disabled = true;
+    startBtn.textContent = '⏳ Starting...';
+    chatManager.setStatus('thinking', 'Executing code...');
+
+    try {
+      // Execute the code from the editor - it should call registerAgent() to connect to the chat
+      await executeCode(code, output, agentManager, chatManager);
+
+      // If the code didn't register an agent, inform the user
+      if (!agentManager.isReady()) {
+        chatManager.setStatus('inactive', 'Agent not started');
+        chatManager.addAgentMessage('⚠️ Code executed, but no agent was registered. Make sure your code calls `registerAgent(agent, tools)` to connect to the chat.');
+        startBtn.disabled = false;
+        startBtn.textContent = '🚀 Start Agent';
+      }
+    } catch (error: any) {
+      chatManager.setStatus('error', 'Failed to start');
+      chatManager.addErrorMessage(error.message);
+      startBtn.disabled = false;
+      startBtn.textContent = '🚀 Start Agent';
+    }
+  });
+
+  // Stop Agent button
+  document.getElementById('stopAgentBtn')?.addEventListener('click', () => {
+    agentManager.stop();
+    chatManager.setStatus('inactive', 'Agent not started');
+    chatManager.enableInput(false);
+
+    const startBtn = document.getElementById('startAgentBtn') as HTMLButtonElement;
+    startBtn.disabled = false;
+    startBtn.textContent = '🚀 Start Agent';
+  });
+
+  // Send message function
+  async function sendMessage() {
+    const message = chatManager.getInputValue();
+    if (!message) return;
+
+    if (!agentManager.isReady()) {
+      chatManager.addErrorMessage('Please start the agent first.');
+      return;
+    }
+
+    chatManager.addUserMessage(message);
+    chatManager.clearInput();
+    chatManager.setStatus('thinking', 'Thinking...');
+
+    const thinkingMsg = chatManager.addThinkingMessage();
+
+    try {
+      const response = await agentManager.sendMessage(message);
+      chatManager.removeThinkingMessage(thinkingMsg);
+      chatManager.addAgentMessage(response.content, response.toolData);
+      chatManager.setStatus('ready', 'Agent ready');
+    } catch (error: any) {
+      chatManager.removeThinkingMessage(thinkingMsg);
+      chatManager.addErrorMessage(error.message);
+      chatManager.setStatus('error', 'Error occurred');
+
+      // Reset to ready after a delay
+      setTimeout(() => {
+        if (agentManager.isReady()) {
+          chatManager.setStatus('ready', 'Agent ready');
+        }
+      }, 3000);
+    }
+  }
+
+  // Send button click
+  document.getElementById('sendBtn')?.addEventListener('click', sendMessage);
+
+  // Enter key to send message
+  document.getElementById('chatInput')?.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  });
+
   output.log('🎉 Hedera Agent Kit Browser POC initialized!');
-  output.log('💡 Try the example buttons or write your own code.');
+  output.log('💡 Try the example buttons or switch to Agent Chat mode.');
 }
 
 // Execute user code
-async function executeCode(code: string, output: OutputManager): Promise<void> {
+async function executeCode(code: string, output: OutputManager, agentManager: AgentManager, chatManager: ChatManager): Promise<void> {
   try {
     // Create a custom console that redirects to our output
     const customConsole = {
@@ -384,6 +540,24 @@ async function executeCode(code: string, output: OutputManager): Promise<void> {
       coreEVMPluginToolNames,
     };
 
+    // Function to register agent with the chat UI
+    const registerAgent = (agent: any, tools: any[]) => {
+      agentManager.setAgent(agent, tools);
+      chatManager.setStatus('ready', 'Agent ready');
+      chatManager.enableInput(true);
+      chatManager.clearWelcome();
+      chatManager.addAgentMessage('🤖 Agent initialized from code editor! You can now chat with me.');
+
+      // Update sidebar button states
+      const startBtn = document.getElementById('startAgentBtn') as HTMLButtonElement;
+      const stopBtn = document.getElementById('stopAgentBtn') as HTMLButtonElement;
+      if (startBtn) {
+        startBtn.disabled = true;
+        startBtn.textContent = '✅ Agent Running';
+      }
+      if (stopBtn) stopBtn.disabled = false;
+    };
+
     // Create an async function with access to our modules and config
     const AsyncFunction = Object.getPrototypeOf(async function () { }).constructor;
     const fn = new AsyncFunction(
@@ -399,6 +573,7 @@ async function executeCode(code: string, output: OutputManager): Promise<void> {
       'viteEnv',
       'toolNames',
       'ResponseParserService',
+      'registerAgent',
       code
     );
 
@@ -415,7 +590,8 @@ async function executeCode(code: string, output: OutputManager): Promise<void> {
       loadConfig,
       viteEnv,
       toolNames,
-      ResponseParserService
+      ResponseParserService,
+      registerAgent
     );
 
     output.success('✅ Code executed successfully!');

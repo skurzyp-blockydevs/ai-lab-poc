@@ -35,13 +35,19 @@
         <button id="saveConfig" class="btn-primary">💾 Save Configuration</button>
       </div>
 
-      <div class="main-content">
-        <div class="code-panel">
-          <div class="panel-header">
-            <h2>📝 Code Editor</h2>
-            <button id="executeBtn" class="btn-execute">▶️ Execute Code</button>
-          </div>
-          <textarea id="codeInput" spellcheck="false" placeholder="// Write your code here...
+      <div class="mode-tabs">
+        <button class="mode-tab active" data-mode="code">📝 Code Editor</button>
+        <button class="mode-tab" data-mode="chat">💬 Agent Chat</button>
+      </div>
+
+      <div class="mode-content code-mode active">
+        <div class="main-content">
+          <div class="code-panel">
+            <div class="panel-header">
+              <h2>📝 Code Editor</h2>
+              <button id="executeBtn" class="btn-execute">▶️ Execute Code</button>
+            </div>
+            <textarea id="codeInput" spellcheck="false" placeholder="// Write your code here...
 // Example:
 console.log('Hello from Hedera Agent Kit!');
 
@@ -49,23 +55,61 @@ console.log('Hello from Hedera Agent Kit!');
 // const balance = await getBalance();
 // console.log('Balance:', balance);
 "></textarea>
+          </div>
+
+          <div class="output-panel">
+            <div class="panel-header">
+              <h2>📊 Console Output</h2>
+              <button id="clearOutput" class="btn-secondary">🗑️ Clear</button>
+            </div>
+            <div id="output" class="output-content"></div>
+          </div>
         </div>
 
-        <div class="output-panel">
-          <div class="panel-header">
-            <h2>📊 Console Output</h2>
-            <button id="clearOutput" class="btn-secondary">🗑️ Clear</button>
-          </div>
-          <div id="output" class="output-content"></div>
+        <div class="examples">
+          <h3>💡 Quick Examples</h3>
+          <button class="example-btn" data-example="hello">Hello World</button>
+          <button class="example-btn" data-example="balance">Get Balance</button>
+          <button class="example-btn" data-example="client">Create Client</button>
+          <button class="example-btn" data-example="fullAgent">🤖 Full Agent</button>
         </div>
       </div>
 
-      <div class="examples">
-        <h3>💡 Quick Examples</h3>
-        <button class="example-btn" data-example="hello">Hello World</button>
-        <button class="example-btn" data-example="balance">Get Balance</button>
-        <button class="example-btn" data-example="client">Create Client</button>
-        <button class="example-btn" data-example="fullAgent">🤖 Full Agent</button>
+      <div class="mode-content chat-mode">
+        <div class="chat-container">
+          <div class="chat-panel">
+            <div class="chat-header">
+              <h2>💬 Agent Chat</h2>
+              <div id="agentStatus" class="agent-status status-inactive">
+                <span class="status-dot"></span>
+                <span class="status-text">Agent not started</span>
+              </div>
+            </div>
+            <div id="chatMessages" class="chat-messages">
+              <div class="chat-welcome">
+                <p>👋 Welcome! Click "Start Agent" to begin chatting with your Hedera AI assistant.</p>
+              </div>
+            </div>
+            <div class="chat-input-area">
+              <input type="text" id="chatInput" placeholder="Ask the agent something..." disabled>
+              <button id="sendBtn" class="btn-send" disabled>Send</button>
+            </div>
+          </div>
+          <div class="chat-sidebar">
+            <button id="startAgentBtn" class="btn-start-agent">🚀 Start Agent</button>
+            <button id="stopAgentBtn" class="btn-stop-agent" disabled>⏹️ Stop Agent</button>
+            <div class="chat-info">
+              <h4>Available Actions</h4>
+              <ul>
+                <li>Check HBAR balance</li>
+                <li>Transfer HBAR</li>
+                <li>Create tokens</li>
+                <li>Manage topics</li>
+                <li>And more...</li>
+              </ul>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
