@@ -9,67 +9,8 @@
 </head>
 
 <body>
-  <div id="app">
-    <div class="container">
-      <header>
-        <h1>🚀 Hedera Agent Kit - Browser Execution POC</h1>
-        <p>Test executing Hedera Agent Kit code directly in your browser</p>
-      </header>
-
-      <div class="config-panel">
-        <h2>⚙️ Configuration</h2>
-        <div class="config-grid">
-          <div class="config-item">
-            <label for="accountId">Hedera Account ID:</label>
-            <input type="text" id="accountId" placeholder="0.0.xxxxx" />
-          </div>
-          <div class="config-item">
-            <label for="privateKey">Private Key (ECDSA):</label>
-            <input type="password" id="privateKey" placeholder="0x..." />
-          </div>
-          <div class="config-item">
-            <label for="openaiKey">OpenAI API Key:</label>
-            <input type="password" id="openaiKey" placeholder="sk-proj-..." />
-          </div>
-        </div>
-        <button id="saveConfig" class="btn-primary">💾 Save Configuration</button>
-      </div>
-
-      <div class="main-content">
-        <div class="code-panel">
-          <div class="panel-header">
-            <h2>📝 Code Editor</h2>
-            <button id="executeBtn" class="btn-execute">▶️ Execute Code</button>
-          </div>
-          <textarea id="codeInput" spellcheck="false" placeholder="// Write your code here...
-// Example:
-console.log('Hello from Hedera Agent Kit!');
-
-// Access Hedera SDK:
-// const balance = await getBalance();
-// console.log('Balance:', balance);
-"></textarea>
-        </div>
-
-        <div class="output-panel">
-          <div class="panel-header">
-            <h2>📊 Console Output</h2>
-            <button id="clearOutput" class="btn-secondary">🗑️ Clear</button>
-          </div>
-          <div id="output" class="output-content"></div>
-        </div>
-      </div>
-
-      <div class="examples">
-        <h3>💡 Quick Examples</h3>
-        <button class="example-btn" data-example="hello">Hello World</button>
-        <button class="example-btn" data-example="balance">Get Balance</button>
-        <button class="example-btn" data-example="client">Create Client</button>
-        <button class="example-btn" data-example="fullAgent">🤖 Full Agent</button>
-      </div>
-    </div>
-  </div>
-  <script type="module" src="/src/main.ts"></script>
+  <div id="root"></div>
+  <script type="module" src="/src/main.tsx"></script>
 </body>
 
 </html>

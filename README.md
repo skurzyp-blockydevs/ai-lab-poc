@@ -275,20 +275,284 @@ console.log('Account:', config.ACCOUNT_ID);
 
 ### How It Works
 
-1. **Bundling**: Vite bundles all libraries into browser-compatible JavaScript
-2. **Code Execution**: User code runs via `AsyncFunction` constructor with access to pre-imported modules
-3. **Console Redirection**: Custom console captures output and displays it in the UI
-4. **Configuration**: localStorage stores credentials securely in the browser
+### How It Works - The Architecture
+
+The browser execution environment uses a sophisticated **Dependency Injection & Transpilation** system to simulate a Node.js-like environment in the browser.
+
+1.  **Pre-Loading & Bundling**:
+    The core libraries (`@hashgraph/sdk`, `hedera-agent-kit`, `langchain`) are imported in `App.tsx` and bundled by Vite. This makes them available in the browser's memory, even though there is no `node_modules` folder at runtime.
+
+2.  **Transpilation (Accessing Hidden Types)**:
+    When you execute code, the Monaco Editor uses a built-in TypeScript worker to **transpile** your code from TypeScript/ES Modules (using `import`) to CommonJS (using `require`).
+    *   `import { Client } from '@hashgraph/sdk'` ➡️ `const { Client } = require('@hashgraph/sdk')`
+
+3.  **Dependency Injection (The "Magic")**:
+    We implement a custom `mockRequire` function that intercepts these `require` calls. Instead of looking for files (which don't exist in the browser), it returns the pre-loaded library instances from memory.
+    ```typescript
+    const mockRequire = (moduleName) => {
+      switch (moduleName) {
+        case '@hashgraph/sdk': return { Client, PrivateKey };
+        // ... returns other pre-loaded libraries
+      }
+    }
+    ```
+
+4.  **Sandboxed Execution**:
+    The transpiled code is wrapped in an `AsyncFunction` constructor, creating a safe execution scope. We pass our `mockRequire` and other environment variables (`process.env`) into this scope, allowing your code to run naturally as if it were in a standard Node.js environment.
+
+### Default Full Agent Code
+
+This is the code loaded by default in the editor. It demonstrates setting up a Hedera Agent with all available tools.
+
+```typescript
+import {
+  AgentMode,
+  coreAccountPluginToolNames,
+  coreAccountQueryPluginToolNames,
+  coreConsensusPluginToolNames,
+  coreConsensusQueryPluginToolNames,
+  coreEVMPluginToolNames,
+  coreEVMQueryPluginToolNames,
+  coreMiscQueriesPluginsToolNames,
+  coreTokenPluginToolNames,
+  coreTokenQueryPluginToolNames,
+  coreTransactionQueryPluginToolNames,
+  HederaLangchainToolkit,
+  ResponseParserService,
+} from 'hedera-agent-kit';
+import { Client, PrivateKey } from '@hashgraph/sdk';
+import prompts from 'prompts';
+import * as dotenv from 'dotenv';
+import { StructuredToolInterface } from '@langchain/core/tools';
+import { createAgent } from 'langchain';
+import { MemorySaver } from '@langchain/langgraph';
+import { ChatOpenAI } from '@langchain/openai';
+
+dotenv.config();
+
+async function bootstrap(): Promise<void> {
+  // Hedera client setup (Testnet by default)
+  const client = Client.forTestnet().setOperator(
+    process.env.ACCOUNT_ID!,
+    PrivateKey.fromStringECDSA(process.env.PRIVATE_KEY!),
+  );
+
+  // all the available tools
+  const {
+    TRANSFER_HBAR_TOOL,
+    CREATE_ACCOUNT_TOOL,
+    DELETE_ACCOUNT_TOOL,
+    UPDATE_ACCOUNT_TOOL,
+    SIGN_SCHEDULE_TRANSACTION_TOOL,
+    SCHEDULE_DELETE_TOOL,
+    APPROVE_HBAR_ALLOWANCE_TOOL,
+    TRANSFER_HBAR_WITH_ALLOWANCE_TOOL,
+  } = coreAccountPluginToolNames;
+  const {
+    CREATE_FUNGIBLE_TOKEN_TOOL,
+    CREATE_NON_FUNGIBLE_TOKEN_TOOL,
+    AIRDROP_FUNGIBLE_TOKEN_TOOL,
+    MINT_FUNGIBLE_TOKEN_TOOL,
+    MINT_NON_FUNGIBLE_TOKEN_TOOL,
+    UPDATE_TOKEN_TOOL,
+    DISSOCIATE_TOKEN_TOOL,
+    ASSOCIATE_TOKEN_TOOL,
+  } = coreTokenPluginToolNames;
+  const { CREATE_TOPIC_TOOL, SUBMIT_TOPIC_MESSAGE_TOOL, DELETE_TOPIC_TOOL, UPDATE_TOPIC_TOOL } =
+    coreConsensusPluginToolNames;
+  const {
+    GET_ACCOUNT_QUERY_TOOL,
+    GET_ACCOUNT_TOKEN_BALANCES_QUERY_TOOL,
+    GET_HBAR_BALANCE_QUERY_TOOL,
+  } = coreAccountQueryPluginToolNames;
+
+  const { GET_TOPIC_MESSAGES_QUERY_TOOL, GET_TOPIC_INFO_QUERY_TOOL } =
+    coreConsensusQueryPluginToolNames;
+  const { GET_TOKEN_INFO_QUERY_TOOL, GET_PENDING_AIRDROP_TOOL } = coreTokenQueryPluginToolNames;
+  const { GET_CONTRACT_INFO_QUERY_TOOL } = coreEVMQueryPluginToolNames;
+  const { GET_TRANSACTION_RECORD_QUERY_TOOL } = coreTransactionQueryPluginToolNames;
+  const { GET_EXCHANGE_RATE_TOOL } = coreMiscQueriesPluginsToolNames;
+
+  const {
+    TRANSFER_ERC721_TOOL,
+    MINT_ERC721_TOOL,
+    CREATE_ERC20_TOOL,
+    TRANSFER_ERC20_TOOL,
+    CREATE_ERC721_TOOL,
+  } = coreEVMPluginToolNames;
+
+  // Prepare Hedera toolkit with core tools AND custom plugin
+  const hederaAgentToolkit = new HederaLangchainToolkit({
+    client,
+    configuration: {
+      tools: [
+        // Core tools
+        TRANSFER_HBAR_TOOL,
+        CREATE_FUNGIBLE_TOKEN_TOOL,
+        CREATE_TOPIC_TOOL,
+        SUBMIT_TOPIC_MESSAGE_TOOL,
+        DELETE_TOPIC_TOOL,
+        GET_HBAR_BALANCE_QUERY_TOOL,
+        CREATE_NON_FUNGIBLE_TOKEN_TOOL,
+        CREATE_ACCOUNT_TOOL,
+        DELETE_ACCOUNT_TOOL,
+        UPDATE_ACCOUNT_TOOL,
+        AIRDROP_FUNGIBLE_TOKEN_TOOL,
+        MINT_FUNGIBLE_TOKEN_TOOL,
+        MINT_NON_FUNGIBLE_TOKEN_TOOL,
+        ASSOCIATE_TOKEN_TOOL,
+        GET_ACCOUNT_QUERY_TOOL,
+        GET_ACCOUNT_TOKEN_BALANCES_QUERY_TOOL,
+        GET_TOPIC_MESSAGES_QUERY_TOOL,
+        GET_TOKEN_INFO_QUERY_TOOL,
+        GET_TRANSACTION_RECORD_QUERY_TOOL,
+        GET_EXCHANGE_RATE_TOOL,
+        SIGN_SCHEDULE_TRANSACTION_TOOL,
+        GET_CONTRACT_INFO_QUERY_TOOL,
+        TRANSFER_ERC721_TOOL,
+        MINT_ERC721_TOOL,
+        CREATE_ERC20_TOOL,
+        TRANSFER_ERC20_TOOL,
+        CREATE_ERC721_TOOL,
+        UPDATE_TOKEN_TOOL,
+        GET_PENDING_AIRDROP_TOOL,
+        DISSOCIATE_TOKEN_TOOL,
+        SCHEDULE_DELETE_TOOL,
+        GET_TOPIC_INFO_QUERY_TOOL,
+        UPDATE_TOPIC_TOOL,
+        APPROVE_HBAR_ALLOWANCE_TOOL,
+        TRANSFER_HBAR_WITH_ALLOWANCE_TOOL,
+      ],
+      plugins: [], // Add all plugins by default
+      context: {
+        mode: AgentMode.AUTONOMOUS,
+      },
+    },
+  });
+
+  // Fetch tools from a toolkit
+  const tools: StructuredToolInterface[] = hederaAgentToolkit.getTools();
+
+  const llm = new ChatOpenAI({
+    model: 'gpt-4o-mini',
+  });
+
+
+  const agent = createAgent({
+    model: llm,
+    tools: tools,
+    systemPrompt: 'You are a helpful assistant with access to Hedera blockchain tools.',
+    checkpointer: new MemorySaver(),
+  });
+
+  const responseParsingService = new ResponseParserService(hederaAgentToolkit.getTools());
+
+  console.log('Hedera Agent CLI Chatbot with Plugin Support — type "exit" to quit');
+  console.log('');
+
+  while (true) {
+    const { userInput } = await prompts({
+      type: 'text',
+      name: 'userInput',
+      message: 'You',
+    });
+
+    // Handle early termination
+    if (!userInput || ['exit', 'quit'].includes(userInput.trim().toLowerCase())) {
+      console.log('Goodbye!');
+      break;
+    }
+
+    try {
+      const response = await agent.invoke(
+        { messages: [{ role: 'user', content: userInput }] },
+        { configurable: { thread_id: '1' } },
+      );
+
+      const parsedToolData = responseParsingService.parseNewToolMessages(response);
+
+      // Assuming a single tool call per response but parsedToolData might contain an array of tool calls made since the last agent.invoke
+      const toolCall = parsedToolData[0];
+
+      // 1. Handle case when NO tool was called (simple chat)
+      if (!toolCall) {
+        console.log(
+          // @ts-ignore
+          `AI: ${response.messages[response.messages.length - 1].content ?? JSON.stringify(response)}`,
+        );
+        // 2. Handle QUERY tool calls
+      } else {
+        console.log(
+          // @ts-ignore
+          `\nAI: ${response.messages[response.messages.length - 1].content ?? JSON.stringify(response)}`,
+        ); // <- agent response text generated based on the tool call response
+        console.log('\n--- Tool Data ---');
+        console.log('Direct tool response:', toolCall.parsedData.humanMessage); // <- you can use this string for a direct tool human-readable response.
+        console.log('Full tool response object:', JSON.stringify(toolCall.parsedData, null, 2)); // <- you can use this object for convenient tool response extraction
+      }
+    } catch (err) {
+      console.error('Error:', err);
+    }
+  }
+}
+
+bootstrap()
+  .catch(err => {
+    console.error('Fatal error during CLI bootstrap:', err);
+    process.exit(1);
+  })
+  .then(() => {
+    process.exit(0);
+  });
+```
+
+### 3. Execution Tests
+
+You can test the execution engine with these prompts to verify everything is working correctly.
+
+**Test 1: Simple Console Log**
+Verifies that the execution environment and output capture are working.
+```javascript
+console.log(test)
+```
+
+**Test 2: Importing and Inspecting Libraries**
+Verifies that the `import` statements are correctly transpiled and that the Dependency Injection system is correctly providing the `hedera-agent-kit` objects.
+```typescript
+import {
+  AgentMode,
+  coreAccountPluginToolNames,
+  coreAccountQueryPluginToolNames,
+  coreConsensusPluginToolNames,
+  coreConsensusQueryPluginToolNames,
+  coreEVMPluginToolNames,
+  coreEVMQueryPluginToolNames,
+  coreMiscQueriesPluginsToolNames,
+  coreTokenPluginToolNames,
+  coreTokenQueryPluginToolNames,
+  coreTransactionQueryPluginToolNames,
+  HederaLangchainToolkit,
+  ResponseParserService,
+} from 'hedera-agent-kit';
+
+console.log(JSON.stringify(coreTokenPluginToolNames, null, 2))
+```
 
 ## 📁 Project Structure
 
 ```
 monaco-hak/
 ├── index.html          # Main HTML structure
-├── src/
-│   ├── main.ts        # Code execution engine & UI logic
-│   └── style.css      # Modern dark theme styling
 ├── package.json       # Dependencies
+├── tsconfig.json      # TypeScript configuration
+├── vite.config.ts     # Vite configuration
+├── src/
+│   ├── App.tsx        # Main application logic & state
+│   ├── main.tsx       # Entry point
+│   ├── components/    # React UI components (Editor, Toolbar, etc.)
+│   ├── utils/         # Helper functions & constants
+│   ├── polyfills/     # Node.js polyfills for browser
+│   └── style.css      # Modern dark theme styling
 └── README.md         # This file
 ```
 
@@ -302,36 +566,28 @@ monaco-hak/
 
 ## 🎨 Features
 
-- ✨ Modern dark theme UI
-- 📝 Code editor with syntax highlighting
-- 📊 Real-time console output
-- ⚙️ Persistent configuration storage
-- 💡 Quick example templates
-- 🗑️ Clear output functionality
-- ⚡ Fast execution with error handling
+- ✨ **Monaco Editor Integration** - Full IDE experience with TypeScript support & IntelliSense
+- 🤖 **Interactive Agent Chat** - Chat directly with your running AI agents in the output window
+- 🛠️ **Full Hedera Agent Kit Support** - Pre-loaded with all Hedera tools and plugins
+- 📊 **Rich Console Output** - Real-time log capturing with formatted display
+- ⚙️ **Persistent Configuration** - Securely stores API keys and Account IDs locally
+- ⚡ **Instant Transpilation** - Logical TypeScript execution in the browser
 
 ## 🧪 Testing
 
-The POC has been tested with:
-- ✅ Basic JavaScript execution
-- ✅ Console output (log, error, info)
-- ✅ Configuration management
-- ✅ Hedera SDK client creation
-- ✅ Error handling and stack traces
+The POC has been tested and verified with:
+- ✅ TypeScript & JavaScript transpilation and execution
+- ✅ Full AI Agent lifecycles (Initialization -> Tool Use -> Response)
+- ✅ Hedera Network operations (Testnet)
+- ✅ Standard Library Injection (`@hashgraph/sdk`, `langchain`)
 
 ## 📝 Next Steps for Production
 
-1. **Monaco Editor** - Replace textarea with full-featured editor
-2. **Wallet Integration** - Use HashPack/Blade for secure key management
-3. **LLM Proxy** - Implement rate-limited proxy for AI providers
-4. **Code Splitting** - Optimize bundle size with lazy loading
-5. **Sandboxing** - Execute code in Web Workers for security
-6. **AI Assistant** - Add LLM-powered coding helper
-7. **Agent Chat** - Interface for interacting with running agents
-
-## 📚 Documentation
-
-See [walkthrough.md](file:///home/stanislawkurzyp/.gemini/antigravity/brain/bb9833b1-d215-44bb-98d7-870cd49bcc0c/walkthrough.md) for detailed testing results and implementation details.
+1. **Wallet Integration** - Use HashPack/Blade for secure key management (removing private key requirement)
+2. **Web Worker Sandboxing** - Move execution to a separate thread for better security and performance
+3. **LLM Proxy Service** - Hide API keys by routing requests through a backend proxy
+4. **Package Optimization** - Implement lazy loading for heavy dependencies
+5. **Multi-File Support** - Allow defining and importing from multiple virtual files
 
 ## 🤝 Contributing
 

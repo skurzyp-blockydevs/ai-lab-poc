@@ -1,7 +1,9 @@
+// @ts-nocheck
 // Browser polyfill for Node.js async_hooks module
 // This provides a minimal implementation that prevents crashes
 
-export class AsyncLocalStorage {
+export // @ts-nocheck
+    class AsyncLocalStorage {
     constructor() {
         this._store = new Map();
     }

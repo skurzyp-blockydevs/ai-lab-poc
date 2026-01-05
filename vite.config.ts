@@ -2,11 +2,13 @@ import { defineConfig } from 'vite';
 import { nodePolyfills } from 'vite-plugin-node-polyfills';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import react from '@vitejs/plugin-react';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
     plugins: [
+        react(),
         nodePolyfills({
             // Enable polyfills for specific globals and modules
             globals: {
@@ -15,7 +17,7 @@ export default defineConfig({
                 process: true,
             },
             // Enable polyfills for specific Node.js modules
-            protocolImports: true,
+            include: ['buffer', 'process', 'util', 'stream', 'events'],
         }),
     ],
     resolve: {
@@ -24,6 +26,7 @@ export default defineConfig({
             // Use our custom polyfill for async_hooks
             'async_hooks': path.resolve(__dirname, './src/polyfills/async_hooks.ts'),
             'node:async_hooks': path.resolve(__dirname, './src/polyfills/async_hooks.ts'),
+            '@': path.resolve(__dirname, './src'),
         },
     },
     optimizeDeps: {
